@@ -1,328 +1,390 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 
 /* ================================================================
-   감정 날씨 생성기 — Emotion Weather Generator (전시회 키오스크 버전)
+   감정 날씨 생성기 — Emotion Weather Generator & Interactive AI Kiosk
    ------------------------------------------------------------------
-   관람객이 화면 하단의 감정 스펙트럼에서 오늘의 기분을 고르면,
-   그 감정에 대응하는 날씨가 캔버스 위에 피어난다.
-
-   파일 구성 (위에서 아래 순서):
-   1. MOODS         - 감정 데이터 (라벨/색/시적 문장/사용할 엔진 이름)
-   2. ENGINES       - 날씨별 물리 엔진. 날씨를 하나 추가하고 싶으면 이 객체에만
-                       새 항목을 추가하면 되고, 나머지 코드는 손댈 필요가 없다.
-   3. 번개 헬퍼 함수  - 폭풍 전용, 현실적인 번개 줄기/곁가지/깜빡임 생성
-   4. App 컴포넌트   - 캔버스 애니메이션 루프 + 감정 선택 UI + 전시회용 기능
-                       (일정 시간 조작이 없으면 자동으로 처음 화면으로 복귀,
-                        터치 친화적 버튼, 전체화면 전환)
+   관람객이 감정 스펙트럼 버튼을 선택하거나, 채팅창에 자신의 마음/기분을
+   자연어로 이야기하면 감정을 분석하여 고품질 파티클 날씨 물리 엔진과
+   Web Audio API 기반 사운드가 연동되어 실감나는 날씨 환경이 연출됩니다.
    ================================================================ */
 
-/* ---------- 1. 감정 데이터 ----------
-   각 감정은 라벨(한글 이름), 사용할 날씨 엔진 이름(engine),
-   그 감정의 색(color), 화면에 표시될 시적인 두 줄(lines)을 갖는다.
-   스펙트럼 바에 표시되는 순서 = 아래 배열 순서(차분한 색 → 강렬한 색). */
+/* ---------- 1. 감정 데이터 & 자연어 키워드 매핑 ---------- */
 const MOODS = [
   {
-    id: "anxiety", // 감정 고유 id (state 값으로 쓰임)
-    label: "불안", // 화면에 보이는 한글 라벨
-    engine: "typhoon", // 이 감정이 사용할 날씨 엔진 이름 (ENGINES의 key와 일치해야 함)
-    color: "#8A9180", // 이 감정을 상징하는 색 (흐린 카키그린 — 불안정하고 탁한 느낌)
+    id: "anxiety",
+    label: "불안",
+    engine: "typhoon",
+    color: "#7A8272",
+    accent: "#A8B49C",
+    keywords: ["불안", "조마조마", "걱정", "초조", "혼란", "두렵", "무서", "어질어질", "안절부절", "심란", "답답"],
     lines: [
-      "소용돌이가 마음을 휘감아요",
-      "무엇에도 중심을 잡기 어려운 하루예요",
+      "거센 휘돌이바람이 마음을 감싸안아요",
+      "태풍의 중심 속에서 잠시 거친 숨을 고릅니다",
     ],
+    botReply: "마음속에 소용돌이가 치는군요. 태풍의 중심에서 숨을 고르며 마음이 편안해지기를 바라요.",
   },
   {
     id: "sadness",
     label: "슬픔",
     engine: "rain",
-    color: "#6C7A96",
-    lines: ["빗방울이 창가에 맺혀요", "마음 한 켠이 조용히 젖어들어요"],
+    color: "#5C6B83",
+    accent: "#8FA3C4",
+    keywords: ["슬프", "우울", "눈물", "외롭", "쓸쓸", "아프", "상처", "서럽", "후회", "울적", "속상"],
+    lines: ["조용한 빗방울이 마음의 창가에 내려요", "슬픔은 지나가는 비처럼 젖어들다 맑아질 거예요"],
+    botReply: "차분한 빗소리가 감싸안아 줄게요. 조용히 비에 마음을 맡겨보세요.",
   },
   {
     id: "calm",
     label: "평온",
     engine: "snow",
-    color: "#9FD8E8",
-    lines: ["고요함이 눈송이처럼 내려앉아요", "천천히, 아주 천천히 가라앉아요"],
+    color: "#8CBCCB",
+    accent: "#C2E8F3",
+    keywords: ["평온", "고요", "편안", "조용", "휴식", "쉬고", "차분", "안정", "따스", "아늑"],
+    lines: ["고요한 눈송이가 포근히 내려앉아요", "세상이 멈춘 듯 평화로운 시간이 흘러갑니다"],
+    botReply: "포근하고 고요한 눈송이처럼 마음이 한결 편안해지네요.",
   },
   {
     id: "longing",
     label: "그리움",
     engine: "leaves",
-    color: "#D98A4B",
-    lines: ["낙엽이 그리움처럼 흩날려요", "지나간 것들이 자꾸 마음에 내려요"],
+    color: "#C4793B",
+    accent: "#EAA266",
+    keywords: ["그립", "보고싶", "추억", "아련", "옛날", "생각나", "보고파", "미련", "기억"],
+    lines: ["바람 따라 흩날리는 낙엽이 추억을 고스란히 담아요", "스쳐 지나가는 계절 속에서 그리움이 내려앉습니다"],
+    botReply: "지나간 시간과 추억들이 낙엽처럼 아름답게 흩날리고 있어요.",
   },
   {
     id: "joy",
     label: "기쁨",
     engine: "sparkle",
-    color: "#FFC857",
-    lines: ["가슴 속에서 반짝임이 번져요", "빛의 알갱이들이 위로 떠올라요"],
+    color: "#E6B54A",
+    accent: "#FFE382",
+    keywords: ["기쁘", "행복", "신나", "즐거", "좋아", "감사", "설레", "웃음", "희망", "최고", "축하"],
+    lines: ["가슴속 깊은 곳에서 찬란한 삇의 알갱이가 피어나요", "기쁨의 반짝임이 온 세상을 따스하게 채웁니다"],
+    botReply: "당신의 기쁨이 환한 빛이 되어 오롯이 번져나가고 있어요!",
   },
   {
     id: "anger",
     label: "분노",
     engine: "storm",
-    color: "#C4443B",
-    lines: ["천둥이 가슴을 두드려요", "번개처럼 감정이 번쩍이고 지나가요"],
+    color: "#B33932",
+    accent: "#FF5E54",
+    keywords: ["화나", "열받", "짜증", "분노", "억울", "미워", "폭발", "화가", "빡쳐", "성나"],
+    lines: ["격렬한 천둥과 번개가 가슴을 두드려요", "거친 폭풍우 속에서 뭉친 응어리를 시원하게 털어내세요"],
+    botReply: "가슴속 응어리와 분노를 폭풍우와 번개로 시원하게 방출해 버려요!",
   },
 ];
 
-// id로 감정 객체를 바로 찾기 위한 조회 테이블 (매번 배열을 find()로 뒤지지 않도록)
 const MOOD_MAP = Object.fromEntries(MOODS.map((m) => [m.id, m]));
 
 /* ---------- 공용 유틸 함수 ---------- */
-// 값을 [a, b] 범위 안으로 눌러 담는다 (범위를 벗어난 계산값 보정용)
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-// a와 b 사이의 임의의 실수를 반환 (파티클 초기값 등에 사용)
 const rand = (a, b) => a + Math.random() * (b - a);
-// "#RRGGBB" 형태의 색을 "rgba(r,g,b,a)"로 변환 (그라디언트 등에서 투명도 조절용)
 function hexToRgba(hex, a) {
-  const v = hex.replace("#", ""); // 앞의 # 제거
-  const r = parseInt(v.substring(0, 2), 16); // 앞 2자리 = red
-  const g = parseInt(v.substring(2, 4), 16); // 중간 2자리 = green
-  const b = parseInt(v.substring(4, 6), 16); // 뒤 2자리 = blue
+  const v = hex.replace("#", "");
+  const r = parseInt(v.substring(0, 2), 16);
+  const g = parseInt(v.substring(2, 4), 16);
+  const b = parseInt(v.substring(4, 6), 16);
   return `rgba(${r},${g},${b},${a})`;
 }
 
+/* ---------- 텍스트 감정 분석 유틸 ---------- */
+function analyzeEmotionText(text) {
+  const normalized = text.toLowerCase();
+  let bestMood = null;
+  let maxScore = 0;
+
+  for (const mood of MOODS) {
+    let score = 0;
+    for (const kw of mood.keywords) {
+      if (normalized.includes(kw)) {
+        score += 1;
+      }
+    }
+    if (score > maxScore) {
+      maxScore = score;
+      bestMood = mood.id;
+    }
+  }
+
+  // 매칭되는 키워드가 없을 때 기본 감정 추출 (랜덤 또는 조화)
+  if (!bestMood) {
+    const defaultIds = ["calm", "joy", "sadness", "anxiety"];
+    bestMood = defaultIds[Math.floor(Math.random() * defaultIds.length)];
+  }
+
+  return bestMood;
+}
+
 /* ================================================================
-   2. 날씨 엔진 모음
+   2. Web Audio API 사운드합성기 (날씨 오디오 엔진)
    ------------------------------------------------------------------
-   각 엔진은 아래 4가지 함수(중 필요한 것)를 갖는다.
-   - count       : 이 날씨가 사용할 파티클 개수
-   - create(w,h) : 파티클 하나를 초기 상태로 만들어 반환
-   - beforeStep  : (선택) 파티클 개별 계산 전에, 레이어 전체에 한 번만
-                   적용할 공용 상태(태풍의 중심/반경 등)를 갱신
-   - step(...)   : 파티클 하나를 한 프레임만큼 이동시킴
-   - draw(...)   : 파티클 하나를 캔버스에 실제로 그림
+   외부 오디오 파일 없이 Web Audio API의 노이즈 버퍼와 발신기(Oscillator)를
+   사용하여 비, 바람, 눈보라, 태풍, 낙엽소리, 별빛 오르골, 천둥 소리를 생생하게 합성합니다.
+   ================================================================ */
+class WeatherSoundEngine {
+  constructor() {
+    this.ctx = null;
+    this.masterGain = null;
+    this.noiseNode = null;
+    this.filterNode = null;
+    this.currentMood = null;
+    this.oscillators = [];
+    this.isMuted = false;
+  }
+
+  init() {
+    if (this.ctx) return;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    this.ctx = new AudioCtx();
+    this.masterGain = this.ctx.createGain();
+    this.masterGain.gain.setValueAtTime(0.35, this.ctx.currentTime);
+    this.masterGain.connect(this.ctx.destination);
+  }
+
+  // 핑크/화이트 노이즈 생성기 (비, 바람, 폭풍 기초 음원)
+  createNoiseBuffer() {
+    if (!this.ctx) return null;
+    const bufferSize = 2 * this.ctx.sampleRate;
+    const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+    for (let i = 0; i < bufferSize; i++) {
+      const white = Math.random() * 2 - 1;
+      b0 = 0.99886 * b0 + white * 0.0555179;
+      b1 = 0.99332 * b1 + white * 0.0750759;
+      b2 = 0.96900 * b2 + white * 0.1538520;
+      b3 = 0.86650 * b3 + white * 0.3104856;
+      b4 = 0.55000 * b4 + white * 0.5329522;
+      b5 = -0.7616 * b5 - white * 0.0168980;
+      output[i] = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
+      output[i] *= 0.11;
+      b6 = white * 0.115926;
+    }
+    return noiseBuffer;
+  }
+
+  stopAll() {
+    if (this.noiseNode) {
+      try { this.noiseNode.stop(); } catch (_) {}
+      this.noiseNode.disconnect();
+      this.noiseNode = null;
+    }
+    if (this.filterNode) {
+      this.filterNode.disconnect();
+      this.filterNode = null;
+    }
+    this.oscillators.forEach(o => {
+      try { o.stop(); } catch (_) {}
+      try { o.disconnect(); } catch (_) {}
+    });
+    this.oscillators = [];
+  }
+
+  playMoodSound(moodId) {
+    if (!this.ctx) this.init();
+    if (!this.ctx) return;
+    if (this.ctx.state === "suspended") {
+      this.ctx.resume();
+    }
+    this.stopAll();
+    this.currentMood = moodId;
+    if (this.isMuted) return;
+
+    const buffer = this.createNoiseBuffer();
+    if (!buffer) return;
+
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buffer;
+    noise.loop = true;
+
+    const filter = this.ctx.createBiquadFilter();
+    const gain = this.ctx.createGain();
+
+    const now = this.ctx.currentTime;
+
+    switch (moodId) {
+      case "rain": // 차분하고 깊은 빗소리
+        filter.type = "lowpass";
+        filter.frequency.setValueAtTime(900, now);
+        gain.gain.setValueAtTime(0.01, now);
+        gain.gain.linearRampToValueAtTime(0.28, now + 1.2);
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.masterGain);
+        noise.start();
+        this.noiseNode = noise;
+        this.filterNode = filter;
+        break;
+
+      case "typhoon": // 휘몰아치는 거센 태풍 소용돌이 바람
+        filter.type = "bandpass";
+        filter.frequency.setValueAtTime(320, now);
+        filter.Q.setValueAtTime(3.5, now);
+
+        // LFO로 바라는 소용돌이 바람 소리 변조
+        const lfo = this.ctx.createOscillator();
+        lfo.frequency.setValueAtTime(0.3, now);
+        const lfoGain = this.ctx.createGain();
+        lfoGain.gain.setValueAtTime(240, now);
+        lfo.connect(lfoGain);
+        lfoGain.connect(filter.frequency);
+        lfo.start();
+        this.oscillators.push(lfo);
+
+        gain.gain.setValueAtTime(0.01, now);
+        gain.gain.linearRampToValueAtTime(0.45, now + 1.5);
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.masterGain);
+        noise.start();
+        this.noiseNode = noise;
+        this.filterNode = filter;
+        break;
+
+      case "snow": // 포근하고 안락한 미풍 소리
+        filter.type = "lowpass";
+        filter.frequency.setValueAtTime(400, now);
+        gain.gain.setValueAtTime(0.01, now);
+        gain.gain.linearRampToValueAtTime(0.12, now + 2);
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.masterGain);
+        noise.start();
+        this.noiseNode = noise;
+        this.filterNode = filter;
+        break;
+
+      case "leaves": // 흩날리는 서걱거리는 가을 바람과 소리
+        filter.type = "bandpass";
+        filter.frequency.setValueAtTime(1200, now);
+        filter.Q.setValueAtTime(1.8, now);
+        gain.gain.setValueAtTime(0.01, now);
+        gain.gain.linearRampToValueAtTime(0.22, now + 1.2);
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.masterGain);
+        noise.start();
+        this.noiseNode = noise;
+        this.filterNode = filter;
+        break;
+
+      case "sparkle": // 신비로운 반짝임 멜로디 톤
+        filter.type = "highpass";
+        filter.frequency.setValueAtTime(2500, now);
+        gain.gain.setValueAtTime(0.05, now);
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.masterGain);
+        noise.start();
+        this.noiseNode = noise;
+
+        // 아름다운 기쁨의 반짝이는 오르골 아르페지오 톤
+        const freqs = [523.25, 659.25, 783.99, 1046.50, 1318.51];
+        freqs.forEach((f, idx) => {
+          const osc = this.ctx.createOscillator();
+          const oscGain = this.ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(f, now + idx * 0.25);
+          oscGain.gain.setValueAtTime(0, now);
+          oscGain.gain.setValueAtTime(0.08, now + idx * 0.25);
+          oscGain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.25 + 1.8);
+          osc.connect(oscGain);
+          oscGain.connect(this.masterGain);
+          osc.start(now + idx * 0.25);
+          this.oscillators.push(osc);
+        });
+        break;
+
+      case "storm": // 거친 비와 묵직한 폭풍우
+        filter.type = "lowpass";
+        filter.frequency.setValueAtTime(1400, now);
+        gain.gain.setValueAtTime(0.01, now);
+        gain.gain.linearRampToValueAtTime(0.4, now + 1);
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.masterGain);
+        noise.start();
+        this.noiseNode = noise;
+        this.filterNode = filter;
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  // 번개가 칠 때 실시간 천둥 쿠쾅 소리 합성
+  playThunderSound() {
+    if (!this.ctx || this.isMuted) return;
+    const now = this.ctx.currentTime;
+    const buffer = this.createNoiseBuffer();
+    if (!buffer) return;
+
+    const thunderNoise = this.ctx.createBufferSource();
+    thunderNoise.buffer = buffer;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(180, now);
+    filter.frequency.exponentialRampToValueAtTime(40, now + 1.8);
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.8, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 2.0);
+
+    thunderNoise.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain);
+
+    thunderNoise.start(now);
+  }
+
+  toggleMute() {
+    this.isMuted = !this.isMuted;
+    if (this.masterGain && this.ctx) {
+      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 0.35, this.ctx.currentTime);
+    }
+    return this.isMuted;
+  }
+}
+
+const audioEngine = new WeatherSoundEngine();
+
+/* ================================================================
+   3. 고품질 리얼리스틱 날씨 물리 엔진 (ENGINES)
+   ------------------------------------------------------------------
+   태풍: 도넛 모양 대신 실제 강력한 암구름 태풍 소용돌이, 대기 나선, 강풍 벡터.
+   폭풍: 거대한 뇌운(Cumulonimbus) 볼륨, 3D 깊이 빗줄기, 충격파, 리얼 번개.
+   비/눈/낙엽/반짝임: 다층 레이어 대기 효과, 안개 및 입체 파티클.
    ================================================================ */
 const ENGINES = {
   /* ---- 비 (슬픔) ---- */
   rain: {
-    count: 220, // 빗방울 개수
+    count: 320,
     create: (w, h) => ({
-      x: rand(0, w), // 화면 폭 안에서 임의의 시작 x
-      y: rand(-h, h), // 화면 위쪽 바깥에서도 시작하도록 -h까지 허용 (처음부터 화면 가득 차 보이게)
-      z: rand(0.3, 1), // 깊이감(0에 가까울수록 멀리 있는 빗방울 = 작고 느림)
-      len: rand(10, 22), // 빗줄기 길이
+      x: rand(-w * 0.2, w * 1.2),
+      y: rand(-h, h),
+      z: rand(0.15, 1),
+      len: rand(14, 32),
+      speedScale: rand(0.8, 1.3),
     }),
     step: (p, w, h, dt, intensity) => {
-      // intensity(0~1)가 커질수록 빗줄기가 굵고 빨라짐 (감정에 오래 머물수록 강해짐)
-      const speed = (260 + intensity * 220) * p.z * dt;
-      p.x += 40 * p.z * dt; // 살짝 대각선으로 떨어지도록 x도 함께 이동(바람 느낌)
+      const speed = (380 + intensity * 280) * p.z * p.speedScale * dt;
+      p.x += 65 * p.z * dt;
       p.y += speed;
       if (p.y > h) {
-        // 화면 아래로 나가면 위쪽으로 재배치 (무한 루프처럼 보이게)
-        p.y = -20;
-        p.x = rand(0, w);
-        // 바닥에 닿았다는 이벤트를 리턴해서, 호출부에서 파문(splash)을 만들 수 있게 함
+        p.y = rand(-40, -10);
+        p.x = rand(-w * 0.2, w * 1.1);
         return { splash: true, x: p.x, z: p.z };
       }
-      return null; // 이벤트 없음
+      return null;
     },
     draw: (ctx, p, color, sizeScale) => {
-      ctx.globalAlpha = 0.25 + p.z * 0.35; // 가까운(z가 큰) 빗방울일수록 진하게
+      ctx.globalAlpha = (0.15 + p.z * 0.5);
       ctx.strokeStyle = color;
-      ctx.lineWidth = Math.max(0.6, p.z * sizeScale);
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.lineTo(p.x + 6 * p.z, p.y + p.len * p.z); // 짧은 대각선 = 빗줄기 한 획
-      ctx.stroke();
-      ctx.globalAlpha = 1; // 다음 그림에 영향 없도록 복원
-    },
-  },
-
-  /* ---- 눈 (평온) ---- */
-  snow: {
-    count: 160,
-    create: (w, h) => ({
-      x: rand(0, w),
-      y: rand(-h, h),
-      z: rand(0.2, 1),
-      wob: rand(0, Math.PI * 2), // 좌우로 흔들리는 위상값(sin 계산용 시작점)
-    }),
-    step: (p, w, h, dt, intensity) => {
-      p.y += (18 + intensity * 20) * p.z * dt; // 눈은 비보다 훨씬 천천히 떨어짐
-      p.wob += dt * 0.6; // 흔들림 위상을 서서히 진행
-      p.x += Math.sin(p.wob) * 0.5; // sin 곡선을 따라 좌우로 살랑살랑
-      if (p.y > h) {
-        p.y = -10;
-        p.x = rand(0, w);
-      }
-      return null;
-    },
-    draw: (ctx, p, color, sizeScale) => {
-      ctx.globalAlpha = 0.35 + p.z * 0.5;
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, Math.max(0.8, p.z * sizeScale * 1.6), 0, Math.PI * 2); // 눈송이 = 작은 원
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    },
-  },
-
-  /* ---- 태풍 (불안) ----
-     불안을 "무엇 하나 또렷하지 않고, 중심을 잡을 수 없이 휘몰아치는" 느낌으로 표현.
-     파티클들이 화면 중심으로 서서히 빨려 들어가며 소용돌이치다가(수렴 단계),
-     주기적으로 한 번씩 바깥으로 터져 흩어진다(발산 단계) — 불안이 차오르다 터지는 것을 은유. */
-  typhoon: {
-    count: 260,
-    create: (w, h) => ({
-      angle: rand(0, Math.PI * 2), // 중심 기준 현재 각도
-      radius: rand(0, Math.max(w, h) * 0.6), // 중심으로부터 거리
-      z: rand(0.3, 1), // 깊이감(속도/굵기에 반영)
-    }),
-    // beforeStep은 "파티클 하나"가 아니라 "이 레이어 전체"에 대해 프레임마다 딱 한 번만 실행된다.
-    // 태풍의 중심 좌표, 수렴/발산 사이클 진행도처럼 모든 파티클이 공유하는 값을 여기서 계산해서
-    // layer.aux(파티클과 별개로 레이어에 딸린 보관함)에 저장해둔다.
-    beforeStep: (layer, w, h, dt, intensity) => {
-      const period = 9; // 한 번의 "수렴→발산" 사이클이 도는 데 걸리는 시간(초)
-      layer.aux.cycle = (layer.aux.cycle || 0) + dt; // 누적 경과 시간
-      const t = (layer.aux.cycle % period) / period; // 0~1 사이 사이클 진행률
-      layer.aux.exploding = t > 0.75; // 사이클의 마지막 25% 구간에서만 "터짐" 상태
-      // 현재 단계(수렴/발산) 안에서의 진행률(0~1)
-      const phaseProgress = layer.aux.exploding ? (t - 0.75) / 0.25 : t / 0.75;
-      // 수렴 단계에서는 시간이 지날수록(+오래 머물수록) 소용돌이가 강해짐
-      layer.aux.intensity = layer.aux.exploding
-        ? 1
-        : clamp(phaseProgress + intensity * 0.3, 0, 1);
-      // 소용돌이의 눈(중심 빈 공간) 반지름 — 강할수록 커짐
-      layer.aux.coreRadius =
-        30 + Math.pow(layer.aux.intensity, 3) * Math.min(w, h) * 0.28;
-      layer.aux.cx = w / 2; // 태풍 중심 x = 화면 중앙
-      layer.aux.cy = h / 2; // 태풍 중심 y = 화면 중앙
-    },
-    // aux: beforeStep에서 계산해둔 공용 상태를 전달받음
-    step: (p, w, h, dt, intensity, aux) => {
-      if (!aux.exploding) {
-        // 수렴 단계: 각도를 계속 돌리면서, 반지름을 coreRadius 쪽으로 서서히 당김
-        p.angle += dt * (0.6 + aux.intensity * 2.2) * p.z;
-        p.radius += (aux.coreRadius - p.radius) * dt * 0.8;
-      } else {
-        // 발산 단계: 느리게 돌면서 반지름을 빠르게 키워 바깥으로 튕겨나가게 함
-        p.angle += dt * 0.5 * p.z;
-        p.radius += dt * (140 + intensity * 80) * p.z;
-        if (p.radius > Math.max(w, h)) {
-          // 화면 밖까지 나가면 다시 중심 근처에서 리스폰
-          p.radius = rand(0, aux.coreRadius * 0.4);
-          p.angle = rand(0, Math.PI * 2);
-        }
-      }
-      return null;
-    },
-    draw: (ctx, p, color, sizeScale, _grad, aux) => {
-      // 파티클의 "직전 위치"를 살짝 계산해서, 점이 아니라 짧은 궤적 선으로 그려 속도감을 표현
-      const stretch = aux.exploding ? -6 * p.z : (8 + aux.intensity * 24) * p.z;
-      const prevAngle = p.angle - 0.04;
-      const prevRadius = p.radius + stretch;
-      const x0 = aux.cx + Math.cos(prevAngle) * prevRadius;
-      const y0 = aux.cy + Math.sin(prevAngle) * prevRadius * 0.82; // *0.82 = 타원형 궤도(원근감)
-      const x1 = aux.cx + Math.cos(p.angle) * p.radius;
-      const y1 = aux.cy + Math.sin(p.angle) * p.radius * 0.82;
-      ctx.globalAlpha =
-        (aux.exploding ? 0.22 : 0.15 + aux.intensity * 0.55) *
-        (0.4 + p.z * 0.6);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = Math.max(0.6, p.z * sizeScale * 0.9);
-      ctx.beginPath();
-      ctx.moveTo(x0, y0);
-      ctx.lineTo(x1, y1);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    },
-  },
-
-  /* ---- 낙엽 (그리움) ---- */
-  leaves: {
-    count: 90,
-    create: (w, h) => ({
-      x: rand(0, w),
-      y: rand(-h, h),
-      z: rand(0.3, 1),
-      rot: rand(0, Math.PI * 2), // 잎의 현재 회전각
-      spin: rand(-1, 1), // 회전 속도/방향(음수면 반시계)
-      wob: rand(0, Math.PI * 2), // 좌우 흔들림 위상
-    }),
-    step: (p, w, h, dt, intensity) => {
-      p.y += (24 + intensity * 20) * p.z * dt;
-      p.wob += dt;
-      p.x += Math.sin(p.wob) * (18 + intensity * 10) * dt; // 바람에 흩날리듯 좌우로 크게 이동
-      p.rot += p.spin * dt; // 회전은 낙하와 별개로 계속 진행
-      if (p.y > h) {
-        p.y = -10;
-        p.x = rand(0, w);
-      }
-      return null;
-    },
-    draw: (ctx, p, color, sizeScale) => {
-      const s = Math.max(2, p.z * sizeScale * 2.2);
-      ctx.save(); // 회전 변환이 다른 파티클에 영향 주지 않도록 상태 저장
-      ctx.translate(p.x, p.y); // 파티클 위치로 좌표계 이동
-      ctx.rotate(p.rot); // 잎의 회전각만큼 좌표계 회전
-      ctx.globalAlpha = 0.4 + p.z * 0.5;
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.ellipse(0, 0, s, s * 0.55, 0, 0, Math.PI * 2); // 타원 = 잎 한 장
-      ctx.fill();
-      ctx.restore(); // translate/rotate 이전 상태로 복원
-      ctx.globalAlpha = 1;
-    },
-  },
-
-  /* ---- 반짝임 (기쁨) ---- */
-  sparkle: {
-    count: 130,
-    create: (w, h) => ({
-      x: rand(0, w),
-      y: rand(0, h),
-      z: rand(0.2, 1),
-      phase: rand(0, Math.PI * 2), // 깜빡임(twinkle) 위상
-      speed: rand(6, 18), // 위로 떠오르는 속도
-    }),
-    step: (p, w, h, dt, intensity) => {
-      p.y -= (p.speed + intensity * 10) * p.z * dt; // 위로 떠오름(음수 방향 이동)
-      p.phase += dt * 3; // 깜빡임 속도
-      if (p.y < -10) {
-        // 화면 위로 사라지면 아래에서 다시 시작
-        p.y = h + 10;
-        p.x = rand(0, w);
-      }
-      return null;
-    },
-    draw: (ctx, p, color, sizeScale) => {
-      // sin값을 0~1로 정규화해서 밝기가 부드럽게 깜빡이도록(twinkle) 만듦
-      const tw = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(p.phase));
-      ctx.globalAlpha = tw * (0.3 + p.z * 0.6);
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, Math.max(0.8, p.z * sizeScale * 1.4), 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    },
-  },
-
-  /* ---- 폭풍/번개 (분노) ---- */
-  storm: {
-    count: 200,
-    create: (w, h) => ({
-      x: rand(0, w),
-      y: rand(-h, h),
-      z: rand(0.4, 1),
-      len: rand(16, 30),
-    }),
-    step: (p, w, h, dt, intensity) => {
-      p.x += 60 * p.z * dt; // 폭풍우는 비보다 바람에 더 많이 밀림
-      p.y += (340 + intensity * 260) * p.z * dt; // 낙하 속도도 훨씬 빠름
-      if (p.y > h) {
-        p.y = -20;
-        p.x = rand(0, w);
-      }
-      return null;
-    },
-    draw: (ctx, p, color, sizeScale) => {
-      ctx.globalAlpha = 0.2 + p.z * 0.3;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = Math.max(0.6, p.z * sizeScale);
+      ctx.lineWidth = Math.max(0.7, p.z * sizeScale * 1.2);
       ctx.beginPath();
       ctx.moveTo(p.x, p.y);
       ctx.lineTo(p.x + 8 * p.z, p.y + p.len * p.z);
@@ -330,387 +392,652 @@ const ENGINES = {
       ctx.globalAlpha = 1;
     },
   },
+
+  /* ---- 눈 (평온) ---- */
+  snow: {
+    count: 240,
+    create: (w, h) => ({
+      x: rand(0, w),
+      y: rand(-h, h),
+      z: rand(0.15, 1),
+      wob: rand(0, Math.PI * 2),
+      wobSpeed: rand(0.4, 1.2),
+      r: rand(1.2, 3.8),
+    }),
+    step: (p, w, h, dt, intensity) => {
+      p.y += (22 + intensity * 25) * p.z * dt;
+      p.wob += dt * p.wobSpeed;
+      p.x += Math.sin(p.wob) * (15 * p.z) * dt;
+      if (p.y > h + 10) {
+        p.y = -10;
+        p.x = rand(0, w);
+      }
+      return null;
+    },
+    draw: (ctx, p, color, sizeScale) => {
+      ctx.globalAlpha = (0.25 + p.z * 0.6);
+      ctx.fillStyle = color;
+      ctx.shadowColor = "#FFFFFF";
+      ctx.shadowBlur = p.z * 8;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(0.8, p.r * p.z * sizeScale * 0.8), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    },
+  },
+
+  /* ---- 실감나는 진짜 태풍 (불안) ----
+     기존의 도넛 고리 모양을 완전 개편하여, 대기를 뒤덮는 거대한 태풍의 눈,
+     나선형 기류 구름 암운(Spiral Cloud Band) 및 나선 파티클로 구현 */
+  typhoon: {
+    count: 450,
+    create: (w, h) => {
+      const angle = rand(0, Math.PI * 2);
+      const distRatio = Math.pow(Math.random(), 0.75); // 중심~외곽 고른 분포
+      return {
+        angle,
+        distanceRatio: distRatio,
+        z: rand(0.2, 1),
+        speed: rand(1.2, 3.0),
+        size: rand(2, 6),
+        armOffset: Math.floor(rand(0, 4)) * (Math.PI / 2), // 4개의 거대한 나선 팔(Spiral Arms)
+      };
+    },
+    beforeStep: (layer, w, h, dt, intensity) => {
+      layer.aux.time = (layer.aux.time || 0) + dt;
+      layer.aux.cx = w * 0.5;
+      layer.aux.cy = h * 0.45;
+      layer.aux.maxR = Math.max(w, h) * 0.75;
+      layer.aux.eyeR = 45 + intensity * 35; // 태풍의 눈 고요 영역
+    },
+    step: (p, w, h, dt, intensity, aux) => {
+      // 나선 운동: 자이로 회전 + 각속도
+      const currentR = aux.eyeR + p.distanceRatio * (aux.maxR - aux.eyeR);
+      const angularVel = (p.speed + (1 - p.distanceRatio) * 2.5 + intensity * 1.5) / (currentR * 0.04);
+      p.angle += angularVel * dt;
+
+      // 중심 빨려듦 및 상승 기류
+      p.distanceRatio -= 0.04 * dt;
+      if (p.distanceRatio < 0) {
+        p.distanceRatio = rand(0.8, 1.0);
+        p.angle = rand(0, Math.PI * 2);
+      }
+
+      // 태풍 파티클 3D 좌표 계산
+      const spiralAngle = p.angle + p.armOffset + p.distanceRatio * 3.2;
+      p.x = aux.cx + Math.cos(spiralAngle) * currentR * 1.2;
+      p.y = aux.cy + Math.sin(spiralAngle) * currentR * 0.75; // 3D 원근 타원
+      return null;
+    },
+    draw: (ctx, p, color, sizeScale, _g, aux) => {
+      // 태풍 암운 나선 밴드 및 바람 궤적 그리기
+      const tailLen = (12 + (1 - p.distanceRatio) * 28) * p.z;
+      const tailAngle = p.angle + 1.45;
+      const tx = p.x - Math.cos(tailAngle) * tailLen;
+      const ty = p.y - Math.sin(tailAngle) * tailLen * 0.6;
+
+      ctx.globalAlpha = (0.12 + (1 - p.distanceRatio) * 0.55) * p.z;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(0.8, p.size * p.z * sizeScale * 0.5);
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+
+      // 태풍 중심부 구름 입자 렌더링
+      if (p.z > 0.6) {
+        ctx.fillStyle = "#D4DCCE";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * p.z * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    },
+  },
+
+  /* ---- 낙엽 (그리움) ---- */
+  leaves: {
+    count: 120,
+    create: (w, h) => ({
+      x: rand(-w * 0.1, w * 1.1),
+      y: rand(-h, h),
+      z: rand(0.25, 1),
+      rot: rand(0, Math.PI * 2),
+      spin: rand(-1.8, 1.8),
+      wob: rand(0, Math.PI * 2),
+      size: rand(5, 11),
+      colorType: Math.random() > 0.4 ? "#C4793B" : (Math.random() > 0.5 ? "#D95D39" : "#8F4F24"),
+    }),
+    step: (p, w, h, dt, intensity) => {
+      p.y += (35 + intensity * 25) * p.z * dt;
+      p.wob += dt * 1.5;
+      p.x += (Math.sin(p.wob) * 35 + 30) * p.z * dt;
+      p.rot += p.spin * dt;
+      if (p.y > h + 20) {
+        p.y = -20;
+        p.x = rand(-w * 0.1, w * 1.1);
+      }
+      return null;
+    },
+    draw: (ctx, p, _c, sizeScale) => {
+      const s = Math.max(3, p.size * p.z * sizeScale * 0.8);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.globalAlpha = (0.45 + p.z * 0.5);
+      ctx.fillStyle = p.colorType;
+      ctx.beginPath();
+      // 낙엽 세밀한 잎 형태 렌더링
+      ctx.moveTo(0, -s);
+      ctx.quadraticCurveTo(s * 0.8, -s * 0.2, s * 0.5, s);
+      ctx.quadraticCurveTo(0, s * 0.6, -s * 0.5, s);
+      ctx.quadraticCurveTo(-s * 0.8, -s * 0.2, 0, -s);
+      ctx.fill();
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    },
+  },
+
+  /* ---- 반짝임 (기쁨) ---- */
+  sparkle: {
+    count: 180,
+    create: (w, h) => ({
+      x: rand(0, w),
+      y: rand(0, h),
+      z: rand(0.2, 1),
+      phase: rand(0, Math.PI * 2),
+      speed: rand(12, 32),
+      r: rand(1.5, 4.5),
+    }),
+    step: (p, w, h, dt, intensity) => {
+      p.y -= (p.speed + intensity * 15) * p.z * dt;
+      p.phase += dt * 3.5;
+      if (p.y < -15) {
+        p.y = h + 15;
+        p.x = rand(0, w);
+      }
+      return null;
+    },
+    draw: (ctx, p, color, sizeScale) => {
+      const tw = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(p.phase));
+      ctx.globalAlpha = tw * (0.35 + p.z * 0.65);
+      ctx.fillStyle = color;
+      ctx.shadowColor = "#FFF3C4";
+      ctx.shadowBlur = p.z * 12;
+
+      // 별빛 형태로 반짝이는 입자
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(1, p.r * p.z * sizeScale * 0.7), 0, Math.PI * 2);
+      ctx.fill();
+
+      if (p.z > 0.7) {
+        const starS = p.r * p.z * 1.8;
+        ctx.strokeStyle = "#FFFFFF";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(p.x - starS, p.y);
+        ctx.lineTo(p.x + starS, p.y);
+        ctx.moveTo(p.x, p.y - starS);
+        ctx.lineTo(p.x, p.y + starS);
+        ctx.stroke();
+      }
+
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    },
+  },
+
+  /* ---- 리얼 폭풍우 & 뇌운 번개 (분노) ---- */
+  storm: {
+    count: 360,
+    create: (w, h) => ({
+      x: rand(-w * 0.2, w * 1.2),
+      y: rand(-h, h),
+      z: rand(0.2, 1),
+      len: rand(22, 42),
+      speed: rand(450, 750),
+    }),
+    step: (p, w, h, dt, intensity) => {
+      p.x += 120 * p.z * dt;
+      p.y += (p.speed + intensity * 350) * p.z * dt;
+      if (p.y > h) {
+        p.y = -30;
+        p.x = rand(-w * 0.2, w * 1.1);
+      }
+      return null;
+    },
+    draw: (ctx, p, color, sizeScale) => {
+      ctx.globalAlpha = 0.25 + p.z * 0.55;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(0.8, p.z * sizeScale * 1.3);
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x + 14 * p.z, p.y + p.len * p.z);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    },
+  },
 };
 
 /* ================================================================
-   3. 번개 헬퍼 함수 (storm 엔진 전용 보조 효과)
-   ------------------------------------------------------------------
-   실제 번개를 관찰하면:
-   - 메인 줄기가 위→아래로 불규칙하게 꺾이며 내려간다.
-   - 중간중간 옆으로 짧은 곁가지(branch)가 갈라져 나온다.
-   - 한 번에 사라지지 않고, 아주 짧은 시간 안에 "번쩍-살짝 꺼짐-한 번 더 번쩍"
-     하는 이중 섬광(리턴 스트로크)을 보인다.
-   아래 세 함수가 이 세 가지 특징을 각각 담당한다.
+   4. 고도화된 3D 번개 헬퍼 함수
    ================================================================ */
-
-// 메인 번개 줄기 + 곁가지들을 생성해서 반환
 function makeBolt(w, h) {
-  const startX = rand(w * 0.15, w * 0.85); // 화면 가장자리보다는 중앙 쪽에서 시작하게 범위 제한
-  const path = [{ x: startX, y: 0 }]; // 번개가 지나가는 좌표들의 배열
-  const branches = []; // 이 번개에서 갈라져 나온 곁가지들
+  const startX = rand(w * 0.1, w * 0.9);
+  const path = [{ x: startX, y: 0 }];
+  const branches = [];
   let x = startX;
   let y = 0;
-  const steps = Math.ceil(h / 34); // 화면 높이에 맞춰 대략 34px 간격으로 꺾임
+  const steps = Math.ceil(h / 28);
 
   for (let i = 0; i < steps && y < h; i++) {
-    const progress = y / h; // 0(맨 위) ~ 1(맨 아래)
-    // 아래로 내려갈수록(전류가 대기 중에 퍼지면서) 좌우 흔들림 폭이 커짐
-    x += rand(-40, 40) * (0.6 + progress * 0.8);
-    y += rand(26, 46);
-    path.push({ x, y });
+    const progress = y / h;
+    x += rand(-55, 55) * (0.5 + progress * 0.9);
+    y += rand(22, 42);
+    path.push({ x: clamp(x, 10, w - 10), y });
 
-    // 줄기의 중간 구간(25%~70% 지점)에서만, 확률적으로 곁가지를 하나 만듦
-    if (progress > 0.25 && progress < 0.7 && Math.random() < 0.22) {
+    if (progress > 0.15 && progress < 0.8 && Math.random() < 0.35) {
       branches.push(makeBranch(x, y, w));
     }
   }
-  return { path, branches, born: performance.now() }; // born = 이 번개가 태어난 시각(타임스탬프)
+  return { path, branches, born: performance.now() };
 }
 
-// 메인 줄기의 한 지점(startX, startY)에서 갈라지는 짧은 곁가지 하나를 생성
 function makeBranch(startX, startY, w) {
-  const dir = Math.random() < 0.5 ? -1 : 1; // 왼쪽으로 갈지 오른쪽으로 갈지 무작위 결정
+  const dir = Math.random() < 0.5 ? -1 : 1;
   const path = [{ x: startX, y: startY }];
   let x = startX;
   let y = startY;
-  const segs = Math.floor(rand(3, 6)); // 곁가지는 메인 줄기보다 훨씬 짧게 3~5구간만
+  const segs = Math.floor(rand(3, 7));
   for (let i = 0; i < segs; i++) {
-    x += dir * rand(14, 40); // 한쪽 방향으로 비스듬히 뻗어나감
-    y += rand(18, 34);
-    path.push({ x: clamp(x, 0, w), y }); // 화면 밖으로 나가지 않도록 x좌표를 클램프
+    x += dir * rand(18, 48);
+    y += rand(14, 32);
+    path.push({ x: clamp(x, 0, w), y });
   }
   return path;
 }
 
-// 번개가 태어난 뒤 경과 시간(ms)을 받아, 그 시점의 밝기(0~1)를 반환.
-// 선형으로 서서히 사라지는 대신, 실제 번개처럼 "반짝-꺼짐-반짝-소멸"의 굴곡을 흉내낸다.
 function boltAlpha(elapsedMs) {
-  const t = elapsedMs / 260; // 번개 하나의 총 수명을 260ms로 잡고 0~1 진행률로 환산
-  if (t >= 1) return 0; // 수명이 다하면 완전히 사라짐
-  if (t < 0.08) return t / 0.08; // 0~8%: 아주 빠르게 최대 밝기까지 상승(섬광)
-  if (t < 0.22) return 1; // 8~22%: 최대 밝기 유지
-  if (t < 0.34) return 0.15; // 22~34%: 살짝 어두워짐(첫 번째 섬광 소멸)
-  if (t < 0.5) return 0.8; // 34~50%: 리턴 스트로크로 다시 한번 밝아짐
-  return 0.8 * (1 - (t - 0.5) / 0.5); // 50~100%: 서서히 완전히 소멸
+  const t = elapsedMs / 320;
+  if (t >= 1) return 0;
+  if (t < 0.06) return t / 0.06;
+  if (t < 0.18) return 1;
+  if (t < 0.28) return 0.12;
+  if (t < 0.45) return 0.9;
+  return 0.9 * (1 - (t - 0.45) / 0.55);
 }
 
 /* ================================================================
-   4. App 컴포넌트
+   5. App 컴포넌트 & 채팅 연동 UI
    ================================================================ */
 export default function EmotionWeatherGenerator() {
-  const canvasRef = useRef(null); // 실제 그림을 그릴 <canvas> DOM 참조
-  const wrapRef = useRef(null); // 전체 화면 크기를 재기 위한 바깥 컨테이너 참조
-  const [selected, setSelected] = useState(null); // 현재 선택된 감정 id (UI 표시용)
-  const [showHero, setShowHero] = useState(true); // 처음 안내 화면을 보여줄지 여부
+  const canvasRef = useRef(null);
+  const wrapRef = useRef(null);
+  const chatBottomRef = useRef(null);
 
-  // 관람객마다 환경이 다를 수 있으므로, 시스템의 "동작 줄이기" 설정을 확인해서
-  // 파티클 수/속도를 낮춰 어지러움이나 성능 저하를 줄인다.
+  const [selected, setSelected] = useState(null);
+  const [showHero, setShowHero] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
+
+  // 대화형 채팅 상태
+  const [messages, setMessages] = useState([
+    {
+      sender: "bot",
+      text: "안녕하세요! 오늘 당신의 마음과 마음속 날씨는 어떤가요? 편하게 이야기해 주세요.",
+    },
+  ]);
+  const [inputText, setInputText] = useState("");
+
   const reducedMotion = useRef(
     typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
   );
 
-  // 애니메이션 도중 계속 바뀌는 값들(파티클 위치 등)은 굳이 React state로 관리하지 않고
-  // ref 하나(scene)에 몰아넣는다. 이렇게 하면 프레임마다 값이 바뀌어도 리렌더가 발생하지 않아
-  // 60fps 애니메이션 성능을 지킬 수 있다. (React state는 UI에 실제로 보여줘야 하는 값만 사용)
   const scene = useRef({
-    curr: null, // 현재 재생 중인 날씨 레이어
-    prev: null, // 감정 전환 중일 때, 페이드아웃되고 있는 이전 날씨 레이어
-    transitionT: 1, // 전환 진행률(0=막 전환 시작, 1=전환 완료)
-    lastFrame: 0, // 직전 프레임의 타임스탬프(dt 계산용)
+    curr: null,
+    prev: null,
+    transitionT: 1,
+    lastFrame: 0,
   });
 
-  // 하나의 "날씨 레이어"를 새로 만드는 함수.
-  // 레이어 = { 어떤 감정인지, 파티클 배열, 파문/번개 같은 부가 이펙트 배열, 시작 시각, aux(엔진 전용 공용 상태) }
   const buildLayer = useCallback((moodId, w, h) => {
     const mood = MOOD_MAP[moodId];
     const engine = ENGINES[mood.engine];
-    // 동작 줄이기 모드에서는 파티클 수를 절반으로 줄여 부하를 낮춤
-    const n = reducedMotion.current
-      ? Math.round(engine.count * 0.5)
-      : engine.count;
+    const n = reducedMotion.current ? Math.round(engine.count * 0.5) : engine.count;
     return {
       moodId,
       particles: Array.from({ length: n }, () => engine.create(w, h)),
-      splashes: [], // 비/폭풍 낙수 파문 이펙트들
-      bolts: [], // 폭풍의 번개들
-      aux: {}, // 태풍처럼 파티클 개별이 아닌 "레이어 전체"가 공유하는 상태를 담는 자리
-      startedAt: performance.now(), // 이 감정에 머물기 시작한 시각(체류 강도 계산용)
+      splashes: [],
+      bolts: [],
+      aux: {},
+      startedAt: performance.now(),
     };
   }, []);
 
-  // 관람객이 감정 버튼을 눌렀을 때 실행됨
   const selectMood = useCallback(
     (moodId) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
-      setSelected(moodId); // UI(캡션, 활성 버튼 표시)를 위한 state 갱신
-      setShowHero(false); // 안내 화면을 닫고 날씨를 보여줌
+      setSelected(moodId);
+      setShowHero(false);
+
+      // Web Audio API 사운드 재생
+      audioEngine.playMoodSound(moodId);
+
       const s = scene.current;
       if (s.curr && s.curr.moodId !== moodId) {
-        // 이미 다른 날씨가 재생 중이었다면, 그것을 prev로 넘기고 서서히 사라지게 함
         s.prev = s.curr;
-        s.transitionT = 0; // 0부터 다시 크로스페이드 시작
+        s.transitionT = 0;
       } else if (!s.curr) {
-        // 첫 선택이면 전환 없이 곧바로 100% 보이게
         s.transitionT = 1;
       }
-      s.curr = buildLayer(moodId, canvas.width, canvas.height); // 새 날씨 레이어 생성
+      s.curr = buildLayer(moodId, canvas.width, canvas.height);
     },
     [buildLayer]
   );
 
-  /* ---- 캔버스 렌더링 루프 ---- */
+  // 채팅 메시지 전송 처리
+  const handleSendMessage = (e) => {
+    e.preventDefault();
+    if (!inputText.trim()) return;
+
+    const userText = inputText.trim();
+    setInputText("");
+
+    // 유저 메시지 추가
+    setMessages((prev) => [...prev, { sender: "user", text: userText }]);
+
+    // 자연어 감정 분석 실행
+    const detectedMoodId = analyzeEmotionText(userText);
+    const moodObj = MOOD_MAP[detectedMoodId];
+
+    // 날씨 생성 실행
+    selectMood(detectedMoodId);
+
+    // 봇 답변 추가
+    setTimeout(() => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          sender: "bot",
+          text: moodObj.botReply,
+          moodColor: moodObj.color,
+          moodLabel: moodObj.label,
+        },
+      ]);
+    }, 400);
+  };
+
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  /* ---- 캔버스 애니메이션 렌더링 루프 ---- */
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
-    let raf; // requestAnimationFrame id (정리할 때 취소하기 위해 보관)
+    let raf;
 
-    // 창 크기(또는 컨테이너 크기)에 맞춰 캔버스의 실제 픽셀 크기를 갱신
     const resize = () => {
       const wrap = wrapRef.current;
+      if (!wrap) return;
       canvas.width = wrap.clientWidth;
       canvas.height = wrap.clientHeight;
     };
     resize();
     window.addEventListener("resize", resize);
 
-    // 레이어 하나(현재 날씨 또는 전환 중인 이전 날씨)를 실제로 그리는 함수
-    // alpha = 이 레이어를 얼마나 진하게 보여줄지(크로스페이드용)
     const renderLayer = (layer, w, h, alpha, now, dt) => {
-      if (!layer) return 0; // 레이어가 없으면 아무것도 그리지 않고, 번개 밝기 0을 반환
+      if (!layer) return 0;
       const mood = MOOD_MAP[layer.moodId];
       const engine = ENGINES[mood.engine];
-      // 이 감정에 머문 시간(0~20초를 0~1로 정규화) → 오래 머물수록 날씨가 짙어짐
       const dwell = clamp((now - layer.startedAt) / 20000, 0, 1);
-      const speedMul = reducedMotion.current ? 0.35 : 1; // 동작 줄이기 모드면 전체 속도를 낮춤
+      const speedMul = reducedMotion.current ? 0.35 : 1;
 
-      ctx.save(); // 이 레이어를 그리는 동안의 캔버스 상태(투명도 등)를 스택에 저장
+      ctx.save();
       ctx.globalAlpha = alpha;
 
-      // 태풍처럼 "레이어 전체가 공유하는 상태"가 필요한 엔진은 beforeStep을 먼저 한 번 실행
       if (engine.beforeStep) {
         engine.beforeStep(layer, w, h, dt * speedMul, dwell);
       }
 
-      // 파티클 하나하나를 이동시키고(step) 그린다(draw)
+      // 캔버스 배경 레이어 대기 효과 (안개/공기감)
+      if (mood.engine === "typhoon") {
+        const bgGrad = ctx.createRadialGradient(w * 0.5, h * 0.45, 10, w * 0.5, h * 0.45, Math.max(w, h) * 0.7);
+        bgGrad.addColorStop(0, "rgba(20,25,22,0.45)");
+        bgGrad.addColorStop(0.5, "rgba(10,12,11,0.7)");
+        bgGrad.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, w, h);
+      }
+
       layer.particles.forEach((p) => {
         const evt = engine.step(p, w, h, dt * speedMul, dwell, layer.aux);
-        // step이 "바닥에 떨어졌다" 같은 이벤트를 반환하면, 파문 이펙트를 하나 추가
-        if (evt?.splash)
-          layer.splashes.push({ x: evt.x, y: h - 2, r: 1, life: 1, z: evt.z });
+        if (evt?.splash) {
+          layer.splashes.push({ x: evt.x, y: h - 4, r: 1, life: 1, z: evt.z });
+        }
         engine.draw(ctx, p, mood.color, 2, null, layer.aux);
       });
 
-      // 비/폭풍에서만: 바닥에 닿은 자리에 번지는 파문(동심원) 그리기
+      // 바닥 튀는 빗방울 파문 효과
       if (mood.engine === "rain" || mood.engine === "storm") {
         for (let i = layer.splashes.length - 1; i >= 0; i--) {
           const sp = layer.splashes[i];
-          sp.r += 40 * dt; // 파문이 시간에 따라 커짐
-          sp.life -= dt * 2.2; // 동시에 서서히 옅어짐
+          sp.r += 48 * dt;
+          sp.life -= dt * 2.4;
           if (sp.life <= 0) {
-            layer.splashes.splice(i, 1); // 다 사라진 파문은 배열에서 제거
+            layer.splashes.splice(i, 1);
             continue;
           }
           ctx.globalAlpha = alpha * sp.life * 0.5;
-          ctx.strokeStyle = mood.color;
+          ctx.strokeStyle = mood.accent;
           ctx.lineWidth = 1;
           ctx.beginPath();
-          // 완전한 원 대신 살짝 눌린 타원으로 그려서 "바닥에서 튄" 느낌을 줌
-          ctx.ellipse(
-            sp.x,
-            sp.y,
-            sp.r * sp.z,
-            sp.r * 0.35 * sp.z,
-            0,
-            0,
-            Math.PI * 2
-          );
+          ctx.ellipse(sp.x, sp.y, sp.r * sp.z, sp.r * 0.3 * sp.z, 0, 0, Math.PI * 2);
           ctx.stroke();
         }
       }
 
-      let maxBoltAlpha = 0; // 이번 프레임에 그려진 번개 중 가장 밝은 값(화면 섬광 세기 결정용)
+      let maxBoltAlpha = 0;
 
-      // 폭풍(분노)에서만: 번개 생성 + 그리기
+      // 리얼 뇌운 폭풍우 번개 & 사운드
       if (mood.engine === "storm") {
-        // 동작 줄이기 모드가 아니고, 체류 시간이 길수록 조금 더 자주 번개가 침
-        if (!reducedMotion.current && Math.random() < 0.008 * (0.5 + dwell)) {
+        if (!reducedMotion.current && Math.random() < 0.012 * (0.6 + dwell)) {
           layer.bolts.push(makeBolt(w, h));
+          audioEngine.playThunderSound();
         }
+
         for (let i = layer.bolts.length - 1; i >= 0; i--) {
           const b = layer.bolts[i];
-          const a = boltAlpha(now - b.born); // 이 번개의 현재 밝기(이중 섬광 곡선 적용)
+          const a = boltAlpha(now - b.born);
           if (a <= 0) {
-            layer.bolts.splice(i, 1); // 수명이 다한 번개는 제거
+            layer.bolts.splice(i, 1);
             continue;
           }
           maxBoltAlpha = Math.max(maxBoltAlpha, a);
 
-          // 메인 줄기: 밝고 두껍게, 은은한 색 발광(shadowBlur) 추가
           ctx.globalAlpha = alpha * a;
-          ctx.strokeStyle = "#F3E9FF"; // 번개 고유색은 거의 흰색에 가까운 푸른빛
-          ctx.shadowColor = mood.color;
-          ctx.shadowBlur = 16;
-          ctx.lineWidth = 2.2;
+          ctx.strokeStyle = "#FFFFFF";
+          ctx.shadowColor = mood.accent;
+          ctx.shadowBlur = 24;
+          ctx.lineWidth = 2.8;
           ctx.beginPath();
           ctx.moveTo(b.path[0].x, b.path[0].y);
           b.path.forEach((pt) => ctx.lineTo(pt.x, pt.y));
           ctx.stroke();
 
-          // 곁가지: 메인 줄기보다 얇고 어둡게 그려서 "덜 강한 전류"처럼 보이게
-          ctx.lineWidth = 1;
-          ctx.globalAlpha = alpha * a * 0.55;
+          ctx.lineWidth = 1.2;
+          ctx.globalAlpha = alpha * a * 0.6;
           b.branches.forEach((branch) => {
             ctx.beginPath();
             ctx.moveTo(branch[0].x, branch[0].y);
             branch.forEach((pt) => ctx.lineTo(pt.x, pt.y));
             ctx.stroke();
           });
-          ctx.shadowBlur = 0; // 다음 그림에 발광 효과가 새어나가지 않도록 초기화
+          ctx.shadowBlur = 0;
         }
 
-        // 번개가 친 순간, 화면 전체가 살짝 하얗게 번쩍이는 효과를 캔버스에 직접 그림
-        // (DOM에 별도 엘리먼트/상태를 두지 않아 리액트 리렌더 없이 번개와 완벽히 동기화됨)
         if (maxBoltAlpha > 0) {
-          ctx.globalAlpha = alpha * maxBoltAlpha * 0.22;
-          ctx.fillStyle = "#F3E9FF";
+          ctx.globalAlpha = alpha * maxBoltAlpha * 0.28;
+          ctx.fillStyle = "#F5F0FF";
           ctx.fillRect(0, 0, w, h);
         }
       }
 
-      ctx.restore(); // 이 레이어를 그리기 전 상태로 캔버스를 되돌림
+      ctx.restore();
       return maxBoltAlpha;
     };
 
-    // 매 프레임 실행되는 메인 루프
     const loop = (now) => {
       const w = canvas.width;
       const h = canvas.height;
       const s = scene.current;
-      // 직전 프레임과의 시간 차이(초 단위). 너무 큰 값(탭 전환 등)은 0.05초로 제한
-      const dt = s.lastFrame
-        ? Math.min(0.05, (now - s.lastFrame) / 1000)
-        : 0.016;
+      const dt = s.lastFrame ? Math.min(0.05, (now - s.lastFrame) / 1000) : 0.016;
 
-      ctx.clearRect(0, 0, w, h); // 이전 프레임 지우기
-
-      // 바탕색: 감정을 고르기 전이나 후나 늘 어두운 중립톤에서 시작
-      ctx.fillStyle = "#0A0A0D";
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = "#090A0D";
       ctx.fillRect(0, 0, w, h);
 
-      // 현재 감정 색을 화면 중앙에서 아주 옅게 퍼지는 빛으로 깔아 분위기(공기감)를 더함
       const activeMood = s.curr ? MOOD_MAP[s.curr.moodId] : null;
       if (activeMood) {
         const g = ctx.createRadialGradient(
           w / 2,
-          h * 0.35,
+          h * 0.4,
           0,
           w / 2,
-          h * 0.6,
-          Math.max(w, h) * 0.8
+          h * 0.5,
+          Math.max(w, h) * 0.85
         );
-        g.addColorStop(0, hexToRgba(activeMood.color, 0.08));
+        g.addColorStop(0, hexToRgba(activeMood.color, 0.12));
         g.addColorStop(1, "rgba(0,0,0,0)");
         ctx.fillStyle = g;
         ctx.fillRect(0, 0, w, h);
       }
 
-      // 감정 전환 중이면 이전 레이어(옅어지는 중)와 새 레이어(짙어지는 중)를 함께 그려 크로스페이드
       if (s.transitionT < 1) {
-        s.transitionT = Math.min(1, s.transitionT + 0.02); // 프레임마다 전환 진행률을 조금씩 채움
+        s.transitionT = Math.min(1, s.transitionT + 0.025);
         renderLayer(s.prev, w, h, 1 - s.transitionT, now, dt);
         renderLayer(s.curr, w, h, s.transitionT, now, dt);
-        if (s.transitionT >= 1) s.prev = null; // 전환이 끝나면 이전 레이어는 완전히 폐기
+        if (s.transitionT >= 1) s.prev = null;
       } else {
         renderLayer(s.curr, w, h, 1, now, dt);
       }
 
-      s.lastFrame = now; // 다음 프레임의 dt 계산을 위해 이번 시각을 저장
-      raf = requestAnimationFrame(loop); // 다음 프레임 예약
+      s.lastFrame = now;
+      raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
 
-    // 컴포넌트가 사라질 때 애니메이션과 이벤트 리스너를 정리(메모리 누수 방지)
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", resize);
     };
-  }, []); // 빈 배열: 이 useEffect는 최초 마운트 시 한 번만 실행 → 슬라이더/버튼 조작이 캔버스를 재시작시키지 않음
+  }, []);
 
-  /* ---- 전시회 키오스크 기능: 일정 시간 조작이 없으면 다음 관람객을 위해 처음 화면으로 복귀 ---- */
+  /* ---- 전시회 유휴 타이머 ---- */
   useEffect(() => {
-    if (!selected || showHero) return; // 아직 아무것도 안 골랐거나 이미 안내 화면이면 타이머 불필요
-    const IDLE_MS = 45000; // 45초 동안 새로운 선택이 없으면 초기화
+    if (!selected || showHero) return;
+    const IDLE_MS = 60000;
     const timer = setTimeout(() => setShowHero(true), IDLE_MS);
-    return () => clearTimeout(timer); // 새로 선택하거나 언마운트되면 이전 타이머를 취소
+    return () => clearTimeout(timer);
   }, [selected, showHero]);
 
-  /* ---- 전시회 키오스크 기능: 전체화면 전환 (브라우저가 키오스크 모드로 세팅되지 않은 경우 대비) ---- */
   const toggleFullscreen = useCallback(() => {
     const el = wrapRef.current;
     if (!document.fullscreenElement) {
-      el?.requestFullscreen?.().catch(() => {}); // 권한 거부 등으로 실패해도 조용히 무시
+      el?.requestFullscreen?.().catch(() => {});
     } else {
       document.exitFullscreen?.();
     }
   }, []);
 
-  const mood = selected ? MOOD_MAP[selected] : null; // 현재 선택된 감정 객체(없으면 null)
+  const handleMuteToggle = () => {
+    const muted = audioEngine.toggleMute();
+    setIsMuted(muted);
+  };
+
+  const mood = selected ? MOOD_MAP[selected] : null;
 
   return (
     <div ref={wrapRef} className="ew-root">
-      {/* 날씨가 실제로 그려지는 캔버스 */}
       <canvas ref={canvasRef} className="ew-canvas" />
 
-      {/* 감정에 어울리는 시적 캡션 (화면 왼쪽 아래) */}
+      {/* 시적 캡션 */}
       {mood && !showHero && (
         <div className="ew-caption" aria-live="polite">
-          <span className="ew-caption-mood" style={{ color: mood.color }}>
+          <span className="ew-caption-mood" style={{ color: mood.accent }}>
             {mood.label}
           </span>
           <p className="ew-caption-line">{mood.lines[0]}</p>
-          <p className="ew-caption-line ew-caption-line--sub">
-            {mood.lines[1]}
-          </p>
+          <p className="ew-caption-line ew-caption-line--sub">{mood.lines[1]}</p>
         </div>
       )}
 
-      {/* 왼쪽 위: 처음 화면으로 돌아가기 + 전체화면 전환 (관람객 교체 시 관리자/다음 관람객이 사용) */}
+      {/* 상단 툴바 */}
       {!showHero && (
         <div className="ew-toolbar">
           <button className="ew-chip" onClick={() => setShowHero(true)}>
             다시 고르기
           </button>
-          <button
-            className="ew-chip ew-chip--icon"
-            onClick={toggleFullscreen}
-            aria-label="전체화면 전환"
-          >
+          <button className="ew-chip ew-chip--icon" onClick={handleMuteToggle} aria-label="사운드 토글">
+            {isMuted ? "🔇" : "🔊"}
+          </button>
+          <button className="ew-chip ew-chip--icon" onClick={toggleFullscreen} aria-label="전체화면 전환">
             ⤢
           </button>
         </div>
       )}
 
-      {/* 히어로(초기 안내) 오버레이 */}
+      {/* 초기 히어로 화면 */}
       <div className={`ew-hero ${showHero ? "ew-hero--visible" : ""}`}>
-        <p className="ew-hero-eyebrow">EMOTION WEATHER</p>
+        <p className="ew-hero-eyebrow">REALISTIC EMOTION WEATHER</p>
         <h1 className="ew-hero-title">
           오늘, 마음의 날씨는
           <br />
           어떤가요
         </h1>
         <p className="ew-hero-sub">
-          아래에서 감정을 골라 보세요. 그 마음이 화면 위의 날씨가 되어요
+          마음속 이야기나 감정을 채팅에 적어보세요. 그 감정이 살아있는 생생한 날씨와 소리로 피어납니다.
         </p>
       </div>
 
-      {/* 감정 스펙트럼: 히어로 화면일 땐 중앙 근처, 선택 후에는 하단에 고정 */}
-      <div
-        className={`ew-spectrum ${
-          showHero ? "ew-spectrum--hero" : "ew-spectrum--dock"
-        }`}
-      >
+      {/* 대화형 감정 채팅창 오버레이 (우측 상단/하단) */}
+      {!showHero && (
+        <div className="ew-chat-container">
+          <div className="ew-chat-header">
+            <span>💬 마음 날씨 대화하기</span>
+          </div>
+          <div className="ew-chat-messages">
+            {messages.map((m, idx) => (
+              <div key={idx} className={`ew-chat-bubble ew-chat-bubble--${m.sender}`}>
+                {m.moodLabel && (
+                  <span className="ew-chat-tag" style={{ backgroundColor: m.moodColor }}>
+                    {m.moodLabel}
+                  </span>
+                )}
+                {m.text}
+              </div>
+            ))}
+            <div ref={chatBottomRef} />
+          </div>
+          <form className="ew-chat-input-area" onSubmit={handleSendMessage}>
+            <input
+              type="text"
+              className="ew-chat-input"
+              placeholder="오늘 마음이나 기분을 적어보세요..."
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+            />
+            <button type="submit" className="ew-chat-send">
+              전송
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* 감정 스펙트럼 바 */}
+      <div className={`ew-spectrum ${showHero ? "ew-spectrum--hero" : "ew-spectrum--dock"}`}>
         <div className="ew-spectrum-line" />
         {MOODS.map((m) => (
           <button
@@ -718,7 +1045,7 @@ export default function EmotionWeatherGenerator() {
             className={`ew-mood ${selected === m.id ? "ew-mood--active" : ""} ${
               showHero ? "ew-mood--pulse" : ""
             }`}
-            style={{ "--mood-color": m.color }}
+            style={{ "--mood-color": m.color, "--mood-accent": m.accent }}
             onClick={() => selectMood(m.id)}
             aria-pressed={selected === m.id}
           >
@@ -729,9 +1056,7 @@ export default function EmotionWeatherGenerator() {
       </div>
 
       <style>{`
-        /* 감정 스펙트럼의 문구/제목에는 감성적인 세리프체(Fraunces),
-           작은 라벨/버튼에는 깔끔한 산세리프(Inter)를 사용해 위계를 나눔 */
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500&family=Inter:wght@400;500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500&family=Inter:wght@400;500;600&display=swap');
 
         .ew-root {
           position: relative;
@@ -739,102 +1064,133 @@ export default function EmotionWeatherGenerator() {
           height: 100vh;
           min-height: 560px;
           overflow: hidden;
-          background: #0A0A0D;
+          background: #090A0D;
           font-family: 'Inter', system-ui, sans-serif;
           color: #F5F1EC;
-          /* 전시회 키오스크(터치스크린) 대응: 확대/드래그/길게 눌러 메뉴 뜨는 것 방지 */
           touch-action: manipulation;
           -webkit-user-select: none;
           user-select: none;
-          -webkit-tap-highlight-color: transparent;
-          -webkit-touch-callout: none;
         }
         .ew-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 
-        /* ---- 히어로(초기 안내) 오버레이 ---- */
         .ew-hero {
           position: absolute; inset: 0;
           display: flex; flex-direction: column; align-items: center; justify-content: center;
           text-align: center; padding: 0 24px;
-          opacity: 0; pointer-events: none; /* 평소엔 안 보이고 클릭도 통과시킴 */
+          opacity: 0; pointer-events: none;
           transition: opacity 0.7s ease;
-          background: radial-gradient(ellipse at center, rgba(10,10,13,0.2) 0%, rgba(10,10,13,0.75) 75%);
+          background: radial-gradient(ellipse at center, rgba(9,10,13,0.2) 0%, rgba(9,10,13,0.85) 75%);
         }
-        .ew-hero--visible { opacity: 1; pointer-events: auto; } /* 보일 때만 클릭 가능하게 */
+        .ew-hero--visible { opacity: 1; pointer-events: auto; }
         .ew-hero-eyebrow {
           font-family: 'Inter', sans-serif; font-size: 11px; letter-spacing: 4px;
           color: #9A968E; margin: 0 0 18px;
         }
         .ew-hero-title {
-          font-family: 'Fraunces', serif; font-weight: 300; font-optical-sizing: auto;
+          font-family: 'Fraunces', serif; font-weight: 300;
           font-size: clamp(32px, 6vw, 56px); line-height: 1.18; margin: 0 0 18px; color: #F5F1EC;
         }
-        .ew-hero-sub { font-size: 14px; color: #B9B4AB; margin: 0; max-width: 380px; }
+        .ew-hero-sub { font-size: 14px; color: #B9B4AB; margin: 0; max-width: 420px; line-height: 1.6; }
 
-        /* ---- 시적 캡션 ---- */
         .ew-caption {
-          position: absolute; left: 40px; bottom: 132px; max-width: 340px;
-          pointer-events: none; /* 캡션이 뒤쪽 캔버스 클릭을 막지 않도록 */
+          position: absolute; left: 40px; bottom: 125px; max-width: 360px;
+          pointer-events: none; z-index: 2;
         }
         .ew-caption-mood {
-          font-family: 'Inter', sans-serif; font-size: 11px; letter-spacing: 3px; font-weight: 500;
-          display: block; margin-bottom: 10px; text-transform: uppercase;
+          font-family: 'Inter', sans-serif; font-size: 12px; letter-spacing: 3px; font-weight: 600;
+          display: block; margin-bottom: 8px; text-transform: uppercase;
         }
         .ew-caption-line {
-          font-family: 'Fraunces', serif; font-weight: 300; font-size: 22px; line-height: 1.5;
-          margin: 0; color: #F5F1EC;
+          font-family: 'Fraunces', serif; font-weight: 300; font-size: 22px; line-height: 1.45;
+          margin: 0; color: #F5F1EC; text-shadow: 0 2px 8px rgba(0,0,0,0.6);
         }
-        .ew-caption-line--sub { color: #9A968E; font-size: 16px; margin-top: 4px; }
+        .ew-caption-line--sub { color: #A8A298; font-size: 15px; margin-top: 6px; }
 
-        /* ---- 왼쪽 위 툴바(다시 고르기 / 전체화면) ---- */
-        .ew-toolbar { position: absolute; top: 24px; left: 24px; display: flex; gap: 8px; }
+        .ew-toolbar { position: absolute; top: 24px; left: 24px; display: flex; gap: 8px; z-index: 10; }
         .ew-chip {
-          background: rgba(20,20,24,0.5); border: 1px solid rgba(245,241,236,0.14);
+          background: rgba(20,20,26,0.65); border: 1px solid rgba(245,241,236,0.16);
           color: #B9B4AB; font-size: 12px; letter-spacing: 1px;
-          padding: 12px 18px; border-radius: 100px; cursor: pointer;
-          backdrop-filter: blur(6px); transition: all 0.2s ease;
-          min-height: 44px; /* 터치 스크린에서도 정확히 누를 수 있도록 최소 44px 확보 */
+          padding: 10px 16px; border-radius: 100px; cursor: pointer;
+          backdrop-filter: blur(8px); transition: all 0.2s ease;
+          min-height: 40px; display: flex; align-items: center; justify-content: center;
         }
-        .ew-chip--icon { padding: 12px 16px; font-size: 16px; min-width: 44px; }
-        .ew-chip:hover, .ew-chip:active { color: #F5F1EC; border-color: rgba(245,241,236,0.3); }
-        .ew-chip:focus-visible { outline: 2px solid #F5F1EC; outline-offset: 2px; }
+        .ew-chip--icon { padding: 10px 14px; font-size: 15px; min-width: 40px; }
+        .ew-chip:hover { color: #F5F1EC; border-color: rgba(245,241,236,0.4); background: rgba(30,30,38,0.8); }
 
-        /* ---- 감정 스펙트럼 바 ---- */
+        /* 대화형 채팅 UI 스티커 패널 */
+        .ew-chat-container {
+          position: absolute; top: 24px; right: 24px; width: 320px; max-height: 420px;
+          background: rgba(16, 18, 24, 0.75); border: 1px solid rgba(245, 241, 236, 0.15);
+          backdrop-filter: blur(12px); border-radius: 16px; display: flex; flex-direction: column;
+          z-index: 10; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        }
+        .ew-chat-header {
+          padding: 12px 16px; background: rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.08);
+          font-size: 13px; font-weight: 500; color: #D8D3CC;
+        }
+        .ew-chat-messages {
+          flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;
+          max-height: 280px;
+        }
+        .ew-chat-bubble {
+          max-width: 85%; padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.45;
+          word-break: break-word; position: relative;
+        }
+        .ew-chat-bubble--bot {
+          align-self: flex-start; background: rgba(40, 44, 56, 0.85); color: #E6E2DC; border-bottom-left-radius: 2px;
+        }
+        .ew-chat-bubble--user {
+          align-self: flex-end; background: #3B5278; color: #FFFFFF; border-bottom-right-radius: 2px;
+        }
+        .ew-chat-tag {
+          display: inline-block; font-size: 10px; padding: 2px 6px; border-radius: 4px; color: #FFF;
+          margin-bottom: 4px; font-weight: 600;
+        }
+        .ew-chat-input-area {
+          display: flex; border-top: 1px solid rgba(255,255,255,0.08); padding: 8px; gap: 6px; background: rgba(0,0,0,0.2);
+        }
+        .ew-chat-input {
+          flex: 1; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
+          border-radius: 8px; padding: 6px 10px; color: #FFF; font-size: 12px; outline: none;
+        }
+        .ew-chat-input:focus { border-color: rgba(255,255,255,0.3); }
+        .ew-chat-send {
+          background: #5C6B83; border: none; border-radius: 8px; color: #FFF; font-size: 12px;
+          padding: 0 12px; cursor: pointer; font-weight: 500; transition: background 0.2s ease;
+        }
+        .ew-chat-send:hover { background: #7283A0; }
+
         .ew-spectrum {
           position: absolute; left: 50%; transform: translateX(-50%);
-          display: flex; align-items: center; gap: 22px;
+          display: flex; align-items: center; gap: 22px; z-index: 10;
           transition: bottom 0.7s cubic-bezier(0.4,0,0.2,1), gap 0.5s ease;
         }
         .ew-spectrum--hero { bottom: 96px; gap: 28px; }
-        .ew-spectrum--dock { bottom: 40px; gap: 20px; }
+        .ew-spectrum--dock { bottom: 36px; gap: 20px; }
         .ew-spectrum-line {
           position: absolute; left: -16px; right: -16px; top: 5px; height: 1px;
-          /* 각 감정의 실제 색을 순서대로 이어 붙인 그라디언트 = "감정의 지평선" */
-          background: linear-gradient(90deg, #8A9180, #6C7A96, #9FD8E8, #D98A4B, #FFC857, #C4443B);
-          opacity: 0.35; z-index: 0;
+          background: linear-gradient(90deg, #7A8272, #5C6B83, #8CBCCB, #C4793B, #E6B54A, #B33932);
+          opacity: 0.45; z-index: 0;
         }
 
         .ew-mood {
           position: relative; z-index: 1;
           background: transparent; border: none; cursor: pointer;
           display: flex; flex-direction: column; align-items: center; gap: 10px;
-          /* 터치 타겟을 넉넉하게: 실제 보이는 점은 작아도, 누를 수 있는 영역은 44px 이상 확보 */
-          padding: 14px 10px; min-width: 44px; min-height: 44px;
+          padding: 12px 10px; min-width: 44px; min-height: 44px;
           color: #9A968E;
         }
         .ew-mood-dot {
           width: 10px; height: 10px; border-radius: 50%;
-          background: var(--mood-color); opacity: 0.45;
+          background: var(--mood-color); opacity: 0.5;
           box-shadow: 0 0 0 0 transparent;
-          transition: opacity 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+          transition: all 0.25s ease;
         }
-        .ew-mood:hover .ew-mood-dot { opacity: 0.8; transform: scale(1.2); }
+        .ew-mood:hover .ew-mood-dot { opacity: 0.85; transform: scale(1.25); }
         .ew-mood--active .ew-mood-dot {
-          opacity: 1; transform: scale(1.35);
-          box-shadow: 0 0 16px 2px var(--mood-color);
+          opacity: 1; transform: scale(1.4);
+          box-shadow: 0 0 18px 3px var(--mood-accent);
         }
-        /* 아무도 조작하지 않는 대기(attract) 상태일 때, 점들이 아주 은은하게 숨쉬듯 깜빡여
-           관람객의 시선을 끄는 역할을 함 */
         .ew-mood--pulse .ew-mood-dot { animation: ew-pulse 2.6s ease-in-out infinite; }
         .ew-mood--pulse:nth-child(2) .ew-mood-dot { animation-delay: 0.3s; }
         .ew-mood--pulse:nth-child(3) .ew-mood-dot { animation-delay: 0.6s; }
@@ -843,7 +1199,7 @@ export default function EmotionWeatherGenerator() {
         .ew-mood--pulse:nth-child(6) .ew-mood-dot { animation-delay: 1.5s; }
         @keyframes ew-pulse {
           0%, 100% { opacity: 0.35; transform: scale(1); }
-          50% { opacity: 0.75; transform: scale(1.15); }
+          50% { opacity: 0.8; transform: scale(1.2); }
         }
 
         .ew-mood-label {
@@ -851,14 +1207,13 @@ export default function EmotionWeatherGenerator() {
           transition: color 0.25s ease;
         }
         .ew-mood:hover .ew-mood-label,
-        .ew-mood--active .ew-mood-label { color: #F5F1EC; }
-        .ew-mood:focus-visible { outline: 2px solid #F5F1EC; outline-offset: 4px; border-radius: 4px; }
+        .ew-mood--active .ew-mood-label { color: #F5F1EC; font-weight: 500; }
 
-        /* ---- 작은 화면(모바일/세로형 키오스크) 대응 ---- */
-        @media (max-width: 640px) {
+        @media (max-width: 768px) {
+          .ew-chat-container { width: calc(100vw - 48px); right: 24px; top: 76px; max-height: 260px; }
           .ew-spectrum { gap: 10px !important; }
           .ew-mood-label { font-size: 10px; }
-          .ew-caption { left: 20px; bottom: 112px; max-width: 78vw; }
+          .ew-caption { left: 20px; bottom: 105px; max-width: 82vw; }
           .ew-caption-line { font-size: 18px; }
         }
       `}</style>
